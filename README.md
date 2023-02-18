@@ -66,9 +66,10 @@ JTAG/SWD 接口都是一种可用于调试、下载程序的接口，需要配�
 - serial: 即 TTL 串口，最原始的固件上传协议，上传速度比较慢，而且不支持调试。
 - cmsis-dap: 是 ARM 官方的调试协议规范
   - 此标准最流行的用法是开源项目 [ARMmbed/DAPLink](https://github.com/ARMmbed/DAPLink)，它将一块 STM32 板子当成调试器，通过 CMSIS-DAP 协议来调试另一块板子。 
-- stlink: ST 意法半导体提出的的调试协议，主要用在 STM32 相关板子上。
+- stlink: ST 意法半导体的商业调试器，主要用在 STM32 相关板子上，因为 STM32 的流行而开始流行。
+- J-Link: 老牌闭源商业调试器，据说性能很好，不过正版的贼贵，没啥必要整。
 
-这里我主要介绍串口跟 DAP 调试器两种烧录方式。
+作为开源爱好者，我选择开源的 DAPLink 调试器。这里介绍下 DAP 跟 serail 两种烧录方式，顺便介绍下 DAP 调试。
 
 ### 1. Serail 串口烧录
 
@@ -152,6 +153,8 @@ STM32F103C8T6 及其国产替代的芯片引脚都是全兼容的，芯片引脚
 为了方便通常也会同时通过调试器的 GND 与 3V3 引脚为被调试设备供电，这样一共就需要连 5 根线。
 
 这样完成后，就可以将 USB 转 TTL 线插入电脑，用 platformio 进行程序烧录了（如果板子一直有上电，还需要按下 RESET 键）。
+
+>这里可以看到，使用 DAP 调试器还有个好处，就是不需要调整 BOOT0/BOOT1 跳帽，通过系统存储器中的 bootloader 来上传数据，省心不少。
 
 >DAPLink 设备在 Linux 系统中通常被命名为 `/dev/ttyACM0`.
 
@@ -360,17 +363,134 @@ void SysTick_Handler(void)
 ```
 
 
-## 如何反汇编找 bug
+## 如何调试
 
-在没有调试器的情况下，对于入门级的程序，最简单的方法应该就是直接反汇编 .elf 固件。
+在没有 DAP 调试器的情况下，解决方法是直接通过串口打印日志。
 
-可以使用 platformio 安装的工具链来干这个活：
+而我这里已经有了一块合宙 AIR32F103CBT6，它自带 DAPLink 固件，用来当 DAP 调试器很好用。
+
+先回顾下我们之前的 platform.ini 配置内容，其中已经配置好了调试协议：
+
+```ini
+[env:learn-STM32F103C8]
+platform = ststm32
+board = genericSTM32F103C8
+framework = stm32cube
+# AVAILABLE upload_protocol: blackmagic, cmsis-dap, dfu, jlink, serial, stlink
+upload_protocol = cmsis-dap
+# 调试协议也设为 DAP
+debug_tool = cmsis-dap
+```
+
+那么直接进入 VSCode 的 PlatformIO 插件页面，在右下角的「Debug」中直接点击「Start Debugging」就能开始调试了。
+调试方法跟用 VSCode 调试一般程序也没啥区别，开始调试后会自动跳转到 VSCOde 的调试页面，左侧栏会显示各种变量的状态，也可以手动加 watch。
+
+platformio 使用了 OpenOCD(Open On-Chip Debugger) + gdb 进行 STM32 的远程调试，因此在 debug console 中能输入各种 gdb 调试命令，用法可以参考下这个 [水一水GDB调试器的用法（入门+进阶）](https://0xffff.one/d/507-shui-yi-shui-gdb-tiao-shi-qi-de). 不过入门级的调试通过 UI 就能直接搞定了。
+
+>这里因为我有 VSCode 与其他语言的调试经验，具体的调试方法就直接略过了。
+
+
+### 反汇编
+
+也可以直接使用 platformio 安装的工具链来反编译固件，通过其汇编查问题，不过需要懂一点 ARM 汇编：
 
 ```shell
 ~/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-objdump -d .pio/build/genericSTM32F103C8/firmware.elf > .pio/firmware.asm
 ```
 
-但是这个方法需要先懂一点 ARM 汇编...
+
+## 如何使用 STM32CubeMX + VSCode 写程序
+
+STM32CubeMX 是 ST 官方提供的代码生成器，非常强大，能帮我们省很多事，野火教程也强烈推荐使用。
+
+但是它生成出的项目结构跟 platformio 完全对不上，没办法直接在 platformio 上用。另一方面我仍然只想用 VSCode 写代码，不打算考虑 STM32CubeIDE/Keli 之类的商业软件或专有软件。
+
+
+VSCode 上有这几种方法，可以编写、调试、上传、监控 STM32CubeMX 生成的项目：
+
+
+1. platformio
+2. Makefile 方案
+   1. [stm32-for-vscode](https://github.com/bmd-studio/stm32-for-vscode): 要求在用 STM32CubeMX 生成代码时选择生成 Makefile
+3. CMake 方案
+   1. [cubemx.cmake](https://github.com/patrislav1/cubemx.cmake): 这个据说封装得比较好，比较小白
+   2. [stm32-cmake](https://github.com/ObKo/stm32-cmake): 这个项目 stars 多，不过要求具有一定的 CMake 基础，看着有点复杂
+   3. [stm32-cube-cmake-vscode](https://github.com/MaJerle/stm32-cube-cmake-vscode): 它要求安装 STM32CubeIDE，我只装了 STM32CubeMX，直接 Pass
+
+
+上面这个列表整理自如下资料：
+
+- [Develop STM32 with CubeMX and VSCode - Reddit](https://www.reddit.com/r/embedded/comments/urft51/develop_stm32_with_cubemx_and_vscode/)
+- [using-stm32cubemx-and-platformio](https://community.platformio.org/t/using-stm32cubemx-and-platformio/2611/57)
+
+
+下面我们分别过一下我尝试过的几种方案。
+
+### 方案一 - 修改 platformio
+
+我之前整 esphome/8051 都是用的 platformio，这个 vscode 插件知名度比较高，很容易上手。
+
+但是它的源代码文件夹结构比较固定，与 STM32CubeMX 生成代码的结构差别较大，在与 stm32cubemx 结合时遇到了很多问题。
+
+主要问题有：
+
+1. platformio 源代码文件夹结构比较固定，与 STM32CubeMX 生成代码的结构差别较大
+   1. 最简单的方法是将 stm32cubemx 生成的代码移动到 platformio 的 src 文件夹中，但这解决不了 stm32cube 底层依赖版本不一致的问题。（通常情况下可能并无此问题，所以这种做法是可行的）
+2. platformio 官方的 stm32cube 版本也可能有落后，导致需要各种魔改 `platformio.ini` 去掉对 platformio 内部 stm32cube 的依赖，改用 SM32CubeMX 生成的 Drivers 替代。以及修改源代码位置，依赖项位置...这就会变得很麻烦
+3. 第三个问题是：网上搜到的代码库也大都是 stm32cubeide 格式的，要利用上这些代码也需要将其移动到 platformio 的文件夹中，或者添加 library.json
+4. [stm32pio](https://github.com/ussserrr/stm32pio) 这个小工具能自动处理兼容性问题，但是一年多没更新了
+
+最后找到了一个非常简单的方法使我通过 platformio 直接跑 STM32CubeMX 生成的程序，就是生成程序时，要选择生成带 Makefile 的项目，然后再手动写一个配置文件放在仓库根目录下，内容如下：
+
+```ini
+# 需要在 platformio 页面中搜到你的板子在 platformio 中的名称，替换掉这里的 genericSTM32F103C8
+[env:genericSTM32F103C8]
+platform = ststm32
+board = genericSTM32F103C8
+framework = stm32cube
+
+# 如下几行为需要手动补充的内容：
+## 使用 DAP 调试器上传固件
+upload_protocol = cmsis-dap
+## 调试协议也设为 DAP
+debug_tool = cmsis-dap
+# 通过 build_flags 来控制引入的依赖项
+build_flags = -g
+  -I MiddleWares/Xxx/
+## platformio 正常情况下只能配一个源码文件夹，但是可以通过这个参数添加多个，而且路径是相对于 src_dir
+## 详见：https://docs.platformio.org/en/stable/projectconf/sections/env/options/build/build_src_filter.html
+# 这里设置多个是为了引入 STM32CubeMX 生成的 Drivers 依赖库
+build_src_filter =
+  +<*>
+  -<../../.pio/>
+  -<../../.vscode/>
+  +<../../MiddleWares>
+
+
+[platformio]
+## 将默认代码文件夹设为 STM32CubeMX 生成的代码文件夹
+include_dir=Core/Inc
+src_dir=Core/Src
+```
+
+这样就 OK 了，其中主要的点是通过 `build_src_filter` `build_flags` 与 `include_dir` `src_dir` 来配置正确的源码查找位置。
+但是这里并未排除掉官方 Drivers 源码，所以是直接使用的 platformio 官方的 stm32 Drivers，有时候可能会遇到版本不一致导致的兼容性问题，需要注意。
+
+用这种方案的好处是 platformio 的编译、调试流程很方便顺手。
+
+### 方案二 - 使用 CMake + VSCode 写代码
 
 
 
+## STM32 连接显示器
+
+我手上有这几块显示屏：
+
+- LCD 液晶显示屏：0.96 寸，128 * 64，使用 I2C 协议，四个引脚，驱动 IC 为 SSD1315
+- TFT SPI 显示屏
+  - 2.8 寸，320 * 240，使用 4 数据线 SPI 协议，驱动 IC 为 ILI9341
+  - 3.5 寸电阻触摸屏，480 * 320，同样是 SPI 协议，驱动 IC 为 ILI9488
+
+首先尝试连接 320 * 240 的 SPI 显示屏
+
+TODO
