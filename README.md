@@ -59,9 +59,20 @@ PlatformIO 上支持 stm32 的 framework 有好几个：
 
 我这个最小系统板的 micro usb 接口是没有 ttl 转 usb 功能的，另一侧的 SWIO/SWCLK 这里虽然看着也是 4 个引脚，但是它是给仿真器用的 SWD 接口。
 
-JTAG/SWD 接口都是一种可用于调试、下载程序的接口，需要配合对应的仿真器使用，目前先不研究。
+JTAG/SWD 接口都是一种可用于调试、下载程序的接口，需要配合对应的仿真器使用。
 
-我之前已经玩过一波 ESP8266 跟 51 单片机了，手上暂时也没啥仿真器用，所以这里先用 TTL 串口烧录程序。缺点就是速度慢一点，然后不能用于调试。
+查看此项目的 `platformio.ini` 配置，其中有 `upload_protocol`，支持多种协议，简要介绍其中常用的几种：
+
+- serial: 即 TTL 串口，最原始的固件上传协议，上传速度比较慢，而且不支持调试。
+- cmsis-dap: 是 ARM 官方的调试协议规范
+  - 此标准最流行的用法是开源项目 [ARMmbed/DAPLink](https://github.com/ARMmbed/DAPLink)，它将一块 STM32 板子当成调试器，通过 CMSIS-DAP 协议来调试另一块板子。 
+- stlink: ST 意法半导体提出的的调试协议，主要用在 STM32 相关板子上。
+
+这里我主要介绍串口跟 DAP 调试器两种烧录方式。
+
+### 1. Serail 串口烧录
+
+我之前已经玩过一波 ESP8266 跟 51 单片机了，对 TTL 串口烧录比较熟悉。它缺点就是速度比较慢，而且不能用于调试。
 
 根据各种文章介绍，STM32 基本全系列都是用 PA9 PA10 这两个引脚进行串口通信：
 
@@ -83,14 +94,66 @@ JTAG/SWD 接口都是一种可用于调试、下载程序的接口，需要配�
 - BOOT0 接 3.3V，即 1
 - BOOT1 接 GND，即 0
 
-最后，platformio 对 stm32 平台，默认使用 stlink 进行上传，但是我们现在要使用串口，所以要改下 `platform.ini` 文件，添加相关参数：
+最后，platformio 对 stm32 平台，默认使用 stlink 进行上传，但是我们现在要使用串口，所以要在 `platform.ini` 中添加 `upload_protocol` 相关参数，修改后内容大致如下：
 
 ```ini
+[env:learn-STM32F103C8]
+platform = ststm32
+board = genericSTM32F103C8
+framework = stm32cube
 # AVAILABLE upload_protocol: blackmagic, cmsis-dap, dfu, jlink, serial, stlink
 upload_protocol = serial
 ```
 
 这样完成后，就可以将 USB 转 TTL 线插入电脑，用 platformio 进行程序烧录了（如果板子一直有上电，还需要按下 RESET 键）。
+
+>串口设备在 Linux 系统中通常被命名为 `/dev/ttyUSB0`.
+
+烧录完成后，需要将 BOOT0 与 BOOT1 都接到 0，再按 RESET 键才能正常启动。
+
+### 2. DAP 调试器烧录
+
+>也有叫它 DAP 仿真器的，但是没理解为什么这么翻译...
+
+跟 TTL 一样，首先还是改 `platform.ini` 添加 `upload_protocol`，但是 DAP 还支持调试功能，因此还可以额外添加 `debug_tool` 指定调试器协议，改完效果大致如下：
+
+```ini
+[env:learn-STM32F103C8]
+platform = ststm32
+board = genericSTM32F103C8
+framework = stm32cube
+# AVAILABLE upload_protocol: blackmagic, cmsis-dap, dfu, jlink, serial, stlink
+upload_protocol = cmsis-dap
+# 调试协议也设为 DAP
+debug_tool = cmsis-dap
+```
+
+然后是接线方式，这个每种调试器的板子设计区别，接线方法会有不同，我用的是合宙的 AIR32F103C8T6 这块板子当调试器，[AIR32F103CBT6 开发版 - 合宙 WIKI](https://wiki.luatos.com/chips/air32f103/board.html) 中有调试方法的大致介绍。
+
+STM32F103C8T6 及其国产替代的芯片引脚都是全兼容的，芯片引脚与在调试中对应的功能如下：
+
+| 引脚   | 功能            |
+| ---- | ---------------- |
+| PB13 | SWD_CLK          |
+| PB14 | SWD_DIO          |
+| PB0  | RST复位           |
+| PA2  | 虚拟串口的 TX      |
+| PA3  | 虚拟串口的 RX      |
+
+以前用过串口的应该知道串口的两个设备接线是反的，TX 接另一块板的 RX，RX 则接另一边的 TX。
+
+而在 DAPLink 调试器中，它是完全一对一连接的，引脚的功能会被 DAPLink 用于对外控制，接线方法具体如下：
+
+- 被调试设备通常都有独立的 SWD_CLK/SWD_DIO 引脚，将刷了 DAPLink 固件的调试板的 PB13 与被调试板的 SWD_CLK 连接，PB14 与被调试板的 SWD_DIO 连接即可。
+  - 如果没有专用引脚，估计直接对接到另一块版的 PB13/PB14 对接应该也是完全可行的。
+- 调试板的 PB0 与被调试板的 PB0 直接对接即可
+
+总结下，调试时只需要正确连将调试器的上述 PB13、PB14、PB0 与被调试设备的对应引脚相连，即可正常烧录与调试。
+为了方便通常也会同时通过调试器的 GND 与 3V3 引脚为被调试设备供电，这样一共就需要连 5 根线。
+
+这样完成后，就可以将 USB 转 TTL 线插入电脑，用 platformio 进行程序烧录了（如果板子一直有上电，还需要按下 RESET 键）。
+
+>DAPLink 设备在 Linux 系统中通常被命名为 `/dev/ttyACM0`.
 
 烧录完成后，需要将 BOOT0 与 BOOT1 都接到 0，再按 RESET 键才能正常启动。
 
