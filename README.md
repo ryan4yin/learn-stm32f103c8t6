@@ -69,7 +69,7 @@ JTAG/SWD 接口都是一种可用于调试、下载程序的接口，需要配�
 - stlink: ST 意法半导体的商业调试器，主要用在 STM32 相关板子上，因为 STM32 的流行而开始流行。
 - J-Link: 老牌闭源商业调试器，据说性能很好，不过正版的贼贵，没啥必要整。
 
-作为开源爱好者，我选择开源的 DAPLink 调试器。这里介绍下 DAP 跟 serail 两种烧录方式，顺便介绍下 DAP 调试。
+作为开源爱好者，我选择开源的 DAPLink 调试器。这里介绍下 DAP 跟 serail 两种烧录方式，而 DAP 调试会在后面适合的时候讲到。
 
 ### 1. Serail 串口烧录
 
@@ -172,7 +172,11 @@ GPIO 的两种输出结构（野火教程使用了三极管来简单说明）：
 详细原理之后仔细学电子电路再了解，先 pass.
 
 
-## 第一个程序 - 通过 GPIO 点亮开发板上自带的 LED 测试灯
+## 一、LED 闪烁
+
+可在 `1_led_blink` 中测试此这一节的代码逻辑。
+
+### 1. 第一个程序 - 通过 GPIO 点亮开发板上自带的 LED 测试灯
 
 测试灯旁边的标记是 PC13，结合原理图可知此 LED 的一端接的 3V3 电源，另一端接的是 STM32 的 PC13 引脚，对应 GPIO13。
 
@@ -224,7 +228,7 @@ int main(void)
 流程中的 `startup_stm32f103xb.S` 是开发板上电时最先启动的程序，可以理解成 bootloader，它先执行一些必备的动作，然后再调用我们 c 语言写的 main 函数。
 详细内容可以直接查看该源码。
 
-## 第二个程序 - 还是点灯，但是更简单了
+### 2. 第二个程序 - 还是点灯，但是更简单了
 
 
 每次都自己计算寄存器地址与位偏移值太麻烦了，STM32 官方库通过结构体给我们定义了更方便的用法，我们可以利用官方库的定义将上述代码改成如下结构：
@@ -292,7 +296,7 @@ void SysTick_Handler(void)
 }
 ```
 
-## 第三个程序 - 还是点灯，但是使用 HAL 库
+### 3. 第三个程序 - 还是点灯，但是使用 HAL 库
 
 前面的第二个版本仍然存在一些位操作，代码量多了后可读性仍然不是很好。
 
@@ -363,7 +367,7 @@ void SysTick_Handler(void)
 ```
 
 
-## 如何调试
+## 二、如何调试
 
 在没有 DAP 调试器的情况下，解决方法是直接通过串口打印日志。
 
@@ -399,7 +403,7 @@ platformio 使用了 OpenOCD(Open On-Chip Debugger) + gdb 进行 STM32 的远程
 ```
 
 
-## 如何使用 STM32CubeMX + VSCode 写程序
+## 三、如何使用 STM32CubeMX + VSCode 写程序
 
 STM32CubeMX 是 ST 官方提供的代码生成器，非常强大，能帮我们省很多事，野火教程也强烈推荐使用。
 
@@ -479,9 +483,11 @@ src_dir=Core/Src
 
 ### 方案二 - 使用 CMake + VSCode 写代码
 
+TODO
 
+## 四、使用 STM32 连接显示器
 
-## STM32 连接显示器
+>代码仓库：<4_stm32f103_ili9341>
 
 我手上有这几块显示屏：
 
@@ -490,6 +496,54 @@ src_dir=Core/Src
   - 2.8 寸，320 * 240，使用 4 数据线 SPI 协议，驱动 IC 为 ILI9341
   - 3.5 寸电阻触摸屏，480 * 320，同样是 SPI 协议，驱动 IC 为 ILI9488
 
-首先尝试连接 320 * 240 的 SPI 显示屏
+首先尝试连接 320 * 240 的 SPI 显示屏，找到一个支持 STM32CubeMX 的显示器驱动仓库，我用到的 ILI9341/ILI9488 两种驱动它均支持：
 
-TODO
+- [stm32_hal_graphics_display_drivers](https://github.com/RobertoBenjami/stm32_hal_graphics_display_drivers)
+
+我需要使用 SPI 协议连接显示器，查阅驱动仓库的 [Drivers/io_spi/lcd_io_spi_hal.h](https://github.com/RobertoBenjami/stm32_hal_graphics_display_drivers/blob/master/Drivers/io_spi/lcd_io_spi_hal.h) 注释可知，它需要我们在使用 STM32CubeMX 生成项目时，分别根据其注释设置 SPI/DMA/GPIO 三项参数，这样生成好的代码就能直接使用此仓库的驱动。
+
+那么首先就按照它的提示配置 STM32CubeMX，但在生成项目前，还需要手动配置如下内容：
+
+- Sys 中将 Debug 模式设为 JTAG(5 Wires)，因为我使用的 DAPLink 是通过 5 根线与开发版连接的。
+
+其他配置用多了就熟悉了，记得每次重新生成代码前都先 git commit 下，这样如果不小心删掉了你的代码，还能找回来。
+
+生成好后，根据驱动项目的提示，需要将驱动中不需要的内容全部删除，然后将剩余内容添加到项目构建的导入路径中，比如说添加到 platformio 的 libs 文件夹中，注意要遵循 platformio 的 library 项目结构。
+
+以 ILI9341 为例，修改完成后的项目存放在 `./stm32f103_ili9341` 中，项目 lib 中的结构为：
+
+```shell
+├── lib
+│   ├── README
+│   └── stm32_hal_graphics_display_drivers
+│       ├── README.md
+│       └── src
+│           ├── bmp.h
+│           ├── Fonts
+│           │   ├── font12.c
+│           │   ├── font16.c
+│           │   ├── font20.c
+│           │   ├── font24.c
+│           │   ├── font8.c
+│           │   ├── fonts.h
+│           │   └── Release_Notes.html
+│           ├── io_spi
+│           │   ├── lcd_io_spi_hal.c
+│           │   └── lcd_io_spi_hal.h
+│           ├── lcd
+│           │   ├── ili9341.c
+│           │   └── ili9341.h
+│           ├── lcd.h
+│           ├── lcd_io.h
+│           ├── stm32_adafruit_lcd.c
+│           ├── stm32_adafruit_lcd.h
+│           ├── stm32_adafruit_ts.c
+│           ├── stm32_adafruit_ts.h
+│           └── ts.h
+```
+
+其中删掉了 `lcd` 文件夹中 ili9341 之外的所有其他驱动文件，以及 io_spi 外的所有其他协议的文件夹，如果不删除掉它们，编译时就会报错重复的函数定义。
+
+相关内容还可参考：[【强烈推荐】基于STM32的TFT-LCD各种显示实现（内容详尽含代码） - CSDN](https://blog.csdn.net/black_sneak/article/details/125583293)
+
+
