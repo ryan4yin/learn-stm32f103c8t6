@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "stm32f1xx_hal.h": "c",
+        "ili9341.h": "c",
+        "bmp.h": "c",
+        "lcd.h": "c",
+        "stm32_adafruit_lcd.h": "c",
+        "lcd_io_spi_hal.h": "c",
+        "applcdspeedtest.h": "c",
+        "main.h": "c"
+    }
+}

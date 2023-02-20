@@ -438,7 +438,6 @@ VSCode 上有这几种方法，可以编写、调试、上传、监控 STM32Cube
    1. 最简单的方法是将 stm32cubemx 生成的代码移动到 platformio 的 src 文件夹中，但这解决不了 stm32cube 底层依赖版本不一致的问题。（通常情况下可能并无此问题，所以这种做法是可行的）
 2. platformio 官方的 stm32cube 版本也可能有落后，导致需要各种魔改 `platformio.ini` 去掉对 platformio 内部 stm32cube 的依赖，改用 SM32CubeMX 生成的 Drivers 替代。以及修改源代码位置，依赖项位置...这就会变得很麻烦
 3. 第三个问题是：网上搜到的代码库也大都是 stm32cubeide 格式的，要利用上这些代码也需要将其移动到 platformio 的文件夹中，或者添加 library.json
-4. [stm32pio](https://github.com/ussserrr/stm32pio) 这个小工具能自动处理兼容性问题，但是一年多没更新了
 
 最后找到了一个非常简单的方法使我通过 platformio 直接跑 STM32CubeMX 生成的程序，就是生成程序时，要选择生成带 Makefile 的项目，然后再手动写一个配置文件放在仓库根目录下，内容如下：
 
