@@ -66,8 +66,10 @@ JTAG/SWD 接口都是一种可用于调试、下载程序的接口，需要配�
 - serial: 即 TTL 串口，最原始的固件上传协议，上传速度比较慢，而且不支持调试。
 - cmsis-dap: 是 ARM 官方的调试协议规范
   - 此标准最流行的用法是开源项目 [ARMmbed/DAPLink](https://github.com/ARMmbed/DAPLink)，它将一块 STM32 板子当成调试器，通过 CMSIS-DAP 协议来调试另一块板子。 
-- stlink: ST 意法半导体的商业调试器，主要用在 STM32 相关板子上，因为 STM32 的流行而开始流行。
-- J-Link: 老牌闭源商业调试器，据说性能很好，不过正版的贼贵，没啥必要整。
+- st-link: ST 意法半导体的商业调试器，主要用在 STM32 相关板子上，因为 STM32 的流行而开始流行。
+- j-link: 老牌闭源商业调试器，据说性能很好，不过正版的贼贵，没啥必要整。
+
+其中串口使用 TX/RX 两根数据线进行异步通信，而其他调试器一般都使用 JTAG 或 SWD 接口与被调试开发版连接，再通过 USB 线与主机通信。
 
 作为开源爱好者，我选择开源的 DAPLink 调试器。这里介绍下 DAP 跟 serail 两种烧录方式，而 DAP 调试会在后面适合的时候讲到。
 
@@ -116,7 +118,31 @@ upload_protocol = serial
 
 >也有叫它 DAP 仿真器的，但是没理解为什么这么翻译...
 
-跟 TTL 一样，首先还是改 `platform.ini` 添加 `upload_protocol`，但是 DAP 还支持调试功能，因此还可以额外添加 `debug_tool` 指定调试器协议，改完效果大致如下：
+前面介绍了调试器一般使用  JTAG 或 SWD 接口与开发板通信，在使用 STM32CubeMX 生成项目时也能在调试参数中找到多个选项，可以通过调整选中项，观察 STM32CubeMX 右侧芯片引脚的变化。
+
+以 STM32F103C8T6 及其引脚全兼容的国产替代品为例，介绍下其中四种调试模式的差别：
+
+- Serial Wire: 即通过 SWD(Serial Wire Debug) 接口进行调试，仅需要 PA13(SWD_DIO)、PA14(SWD_CLK) 两个引脚 + 任意一个其他引脚提供 RESET 信号。
+- Trace Asynchronous SW: 在 Serail Wire(SWD) 的基础上添加了一根 SWO 引脚，实现了串行数据输出，所以加上 RESET 需要 4 根线。
+- JTAG 4 pins: 使用 TMS、TCK、TDI、TDO 四根调试信号引脚 + 任意一根 RESET 引脚。
+- JTAG 5 pins: 在 JATG 4 pins 的基础上添加了一根 TRST 引脚。（功能说明我没看懂...）
+
+而我这里已经有了一块自带 DAPLink 固件的合宙 AIR32F103CBT6，被我用来当 DAP 调试器用，其官方文档 [合宙 AIR32CBT6 使用说明](https://wiki.luatos.com/chips/air32f103/board.html) 介绍了 Serail Wire 模式下的接线方式：
+
+| AIR32F103CBT6 调试器引脚   | 被调试设备引脚 |
+| ----    | ----------------  |
+| PB13    | SWD_CLK，对应 STM32F103C8T6 的 PA14      |
+| PB14    | SWD_DIO，对应 STM32F103C8T6 的 PA13      |
+| PB0     | RST 复位，对应任一未使用到的引脚      |
+| PA2（模拟的串口 TX）     | 串口 RX，对应 PA10       |
+| PA3（模拟的串口 RX）     | 串口 TX，对应 PA9       |
+| VCC/GDN  | VCC/GDN     |
+
+>不接 TX/RX 两根串口线也可以调试，但是就看不了被调试设备输出的日志内容。
+
+照着这个列表接好线即可。
+
+然后是改 platformio 配置，跟 TTL 一样，首先还是改 `platform.ini` 添加 `upload_protocol`，但是 DAP 还支持调试功能，因此还可以额外添加 `debug_tool` 指定调试器协议，改完效果大致如下：
 
 ```ini
 [env:learn-STM32F103C8]
@@ -129,36 +155,11 @@ upload_protocol = cmsis-dap
 debug_tool = cmsis-dap
 ```
 
-然后是接线方式，这个每种调试器的板子设计区别，接线方法会有不同，我用的是合宙的 AIR32F103C8T6 这块板子当调试器，[AIR32F103CBT6 开发版 - 合宙 WIKI](https://wiki.luatos.com/chips/air32f103/board.html) 中有调试方法的大致介绍。
-
-STM32F103C8T6 及其国产替代的芯片引脚都是全兼容的，芯片引脚与在调试中对应的功能如下：
-
-| 引脚   | 功能            |
-| ---- | ---------------- |
-| PB13 | SWD_CLK          |
-| PB14 | SWD_DIO          |
-| PB0  | RST复位           |
-| PA2  | 虚拟串口的 TX      |
-| PA3  | 虚拟串口的 RX      |
-
-以前用过串口的应该知道串口的两个设备接线是反的，TX 接另一块板的 RX，RX 则接另一边的 TX。
-
-而在 DAPLink 调试器中，它是完全一对一连接的，引脚的功能会被 DAPLink 用于对外控制，接线方法具体如下：
-
-- 被调试设备通常都有独立的 SWD_CLK/SWD_DIO 引脚，将刷了 DAPLink 固件的调试板的 PB13 与被调试板的 SWD_CLK 连接，PB14 与被调试板的 SWD_DIO 连接即可。
-  - 如果没有专用引脚，估计直接对接到另一块版的 PB13/PB14 对接应该也是完全可行的。
-- 调试板的 PB0 与被调试板的 PB0 直接对接即可
-
-总结下，调试时只需要正确连将调试器的上述 PB13、PB14、PB0 与被调试设备的对应引脚相连，即可正常烧录与调试。
-为了方便通常也会同时通过调试器的 GND 与 3V3 引脚为被调试设备供电，这样一共就需要连 5 根线。
-
-这样完成后，就可以将 USB 转 TTL 线插入电脑，用 platformio 进行程序烧录了（如果板子一直有上电，还需要按下 RESET 键）。
-
->这里可以看到，使用 DAP 调试器还有个好处，就是不需要调整 BOOT0/BOOT1 跳帽，通过系统存储器中的 bootloader 来上传数据，省心不少。
-
->DAPLink 设备在 Linux 系统中通常被命名为 `/dev/ttyACM0`.
+这样完成后，就可以通过 USB 连接 DAP 调试器与电脑，用 platformio 进行程序烧录了。
 
 烧录完成后，需要将 BOOT0 与 BOOT1 都接到 0，再按 RESET 键才能正常启动。
+
+>这里可以看到，使用 DAP 调试器还有个好处，就是不需要调整 BOOT0/BOOT1 跳帽，通过系统存储器中的 bootloader 来上传数据，省心不少。
 
 ## 芯片的输入输出结构
 
@@ -371,8 +372,6 @@ void SysTick_Handler(void)
 
 在没有 DAP 调试器的情况下，解决方法是直接通过串口打印日志。
 
-而我这里已经有了一块合宙 AIR32F103CBT6，它自带 DAPLink 固件，用来当 DAP 调试器很好用。
-
 先回顾下我们之前的 platform.ini 配置内容，其中已经配置好了调试协议：
 
 ```ini
@@ -501,10 +500,6 @@ TODO
 - [stm32_hal_graphics_display_drivers](https://github.com/RobertoBenjami/stm32_hal_graphics_display_drivers)
 
 我需要使用 SPI 协议连接显示器，查阅驱动仓库的 [Drivers/io_spi/lcd_io_spi_hal.h](https://github.com/RobertoBenjami/stm32_hal_graphics_display_drivers/blob/master/Drivers/io_spi/lcd_io_spi_hal.h) 注释可知，它需要我们在使用 STM32CubeMX 生成项目时，分别根据其注释设置 SPI/DMA/GPIO 三项参数，这样生成好的代码就能直接使用此仓库的驱动。
-
-那么首先就按照它的提示配置 STM32CubeMX，但在生成项目前，还需要手动配置如下内容：
-
-- Sys 中将 Debug 模式设为 JTAG(5 Wires)，因为我使用的 DAPLink 是通过 5 根线与开发版连接的。
 
 其他配置用多了就熟悉了，记得每次重新生成代码前都先 git commit 下，这样如果不小心删掉了你的代码，还能找回来。
 
