@@ -397,6 +397,63 @@ platformio 使用了 OpenOCD(Open On-Chip Debugger) + gdb 进行 STM32 的远程
 >这里因为我有 VSCode 与其他语言的调试经验，具体的调试方法就直接略过了。
 
 
+### printf 重定义到 UART
+
+我们在普通 C 程序中常用的 printf，在 STM32 编程中默认是无法输出内容的。
+
+为了能够通过 UART 串口与程序交互，同时还能方便地直接使用 printf/write 等常用 C 函数，我们需要自定义如下内容(可以单独写个 .h + .c 文件，也可以直接放 main.c 里)：
+
+>野火教程中给出的方法估计仅适用于 Keli 环境，在 GNUC 环境无效，下面这个才是完全版。
+
+```c
+// copy form https://gist.github.com/ryan4yin/91e402bbbce084b8cc722174eaa75d28
+/*# Retarget printf to UART (std library and toolchain dependent) #########*/
+
+#if defined(__GNUC__)
+int _write(int fd, char * ptr, int len)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *) ptr, len, HAL_MAX_DELAY);
+  return len;
+}
+#elif defined (__ICCARM__)
+#include "LowLevelIOInterface.h"
+size_t __write(int handle, const unsigned char * buffer, size_t size)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *) buffer, size, HAL_MAX_DELAY);
+  return size;
+}
+#elif defined (__CC_ARM)
+int fputc(int ch, FILE *f)
+{
+    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+    return ch;
+}
+#endif
+
+// OR:
+
+// Add syscalls.c with GCC
+
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif /* __GNUC__ */
+
+/**
+  * @brief  Retargets the C library printf function to the USART.
+  * @param  None
+  * @retval None
+  */
+PUTCHAR_PROTOTYPE
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
+```
+
+上述代码兼容 STM32Cube 环境。
+
 ### 反汇编
 
 也可以直接使用 platformio 安装的工具链来反编译固件，通过其汇编查问题，不过需要懂一点 ARM 汇编：
@@ -496,8 +553,8 @@ TODO
 
 - LCD 液晶显示屏：0.96 寸，128 * 64，使用 I2C 协议，四个引脚，驱动 IC 为 SSD1315
 - TFT SPI 显示屏
-  - 2.8 寸，320 * 240，使用 4 数据线 SPI 协议，驱动 IC 为 ILI9341
-  - 3.5 寸电阻触摸屏，480 * 320，同样是 SPI 协议，驱动 IC 为 ILI9488
+  - [2.8 寸，320 * 240，使用 4 数据线 SPI 协议，驱动 IC 为 ILI9341](http://www.lcdwiki.com/2.8inch_SPI_Module_ILI9341_SKU:MSP2807)
+  - [3.5 寸电阻触摸屏，480 * 320，同样是 SPI 协议，驱动 IC 为 ILI9488](http://www.lcdwiki.com/3.5inch_SPI_Module_ILI9488_SKU:MSP3520)
 
 首先尝试连接 320 * 240 的 SPI 显示屏，找到一个支持 STM32CubeMX 的显示器驱动仓库，我用到的 ILI9341/ILI9488 两种驱动它均支持：
 
@@ -543,6 +600,9 @@ TODO
 
 其中删掉了 `lcd` 文件夹中 ili9341 之外的所有其他驱动文件，以及 io_spi 外的所有其他协议的文件夹，如果不删除掉它们，编译时就会报错重复的函数定义。
 
-相关内容还可参考：[基于STM32的TFT-LCD各种显示实现（内容详尽含代码） - CSDN](https://blog.csdn.net/black_sneak/article/details/125583293)
+然后接好显示屏的线，就可以跑代码试试了。
 
+### LCD 显示图片、文字
+
+TODO
 

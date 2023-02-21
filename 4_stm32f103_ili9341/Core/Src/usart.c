@@ -123,4 +123,6 @@ void Usart_SendString(uint8_t *s) {
     HAL_UART_Transmit(&huart1, (uint8_t *)(s+i), 1, HAL_MAX_DELAY);
   }
 }
+
+
 /* USER CODE END 1 */
