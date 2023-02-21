@@ -123,24 +123,26 @@ upload_protocol = serial
 以 STM32F103C8T6 及其引脚全兼容的国产替代品为例，介绍下其中四种调试模式的差别：
 
 - Serial Wire: 即通过 SWD(Serial Wire Debug) 接口进行调试，仅需要 PA13(SWD_DIO)、PA14(SWD_CLK) 两个引脚 + 任意一个其他引脚提供 RESET 信号。
-- Trace Asynchronous SW: 在 Serail Wire(SWD) 的基础上添加了一根 SWO 引脚，实现了串行数据输出，所以加上 RESET 需要 4 根线。
+- Trace Asynchronous SW: 在 Serial Wire(SWD) 的基础上添加了一根 SWO 引脚，实现了串行数据输出，所以加上 RESET 需要 4 根线。
 - JTAG 4 pins: 使用 TMS、TCK、TDI、TDO 四根调试信号引脚 + 任意一根 RESET 引脚。
 - JTAG 5 pins: 在 JATG 4 pins 的基础上添加了一根 TRST 引脚。（功能说明我没看懂...）
 
-而我这里已经有了一块自带 DAPLink 固件的合宙 AIR32F103CBT6，被我用来当 DAP 调试器用，其官方文档 [合宙 AIR32CBT6 使用说明](https://wiki.luatos.com/chips/air32f103/board.html) 介绍了 Serail Wire 模式下的接线方式：
+而我这里已经有了一块自带 DAPLink 固件的合宙 AIR32F103CBT6，被我用来当 DAP 调试器用，其官方文档 [合宙 AIR32CBT6 使用说明](https://wiki.luatos.com/chips/air32f103/board.html) 介绍了 SWD 模式下的接线方式：
 
 | AIR32F103CBT6 调试器引脚   | 被调试设备引脚 |
 | ----    | ----------------  |
 | PB13    | SWD_CLK，对应 STM32F103C8T6 的 PA14      |
 | PB14    | SWD_DIO，对应 STM32F103C8T6 的 PA13      |
 | PB0     | RST 复位，对应任一未使用到的引脚      |
-| PA2（模拟的串口 TX）     | 串口 RX，对应 PA10       |
-| PA3（模拟的串口 RX）     | 串口 TX，对应 PA9       |
+| PA2（模拟的串口 TX）     | 串口 RX，通常对应 PA10，具体得看程序的设置       |
+| PA3（模拟的串口 RX）     | 串口 TX，通常对应 PA9，具体得看程序的设置       |
 | VCC/GDN  | VCC/GDN     |
 
->不接 TX/RX 两根串口线也可以调试，但是就看不了被调试设备输出的日志内容。
+>不接 TX/RX 两根串口线也可以上传调试，但是就没法通过串口进行交互（查看被调试设备的输出、发送消息给被调试设备）。
 
-照着这个列表接好线即可。
+>离谱的是，我用 STM32CubeMX 生成代码时，一定得用 JTAG 模式，才能正常上传、调试...换成 Serial Wire 的话，断电重启后就没法上传了，得改 BOOT 跳帽通过 bootloader 重刷...暂时还没理解原因...
+
+照着这个列表接好线即可，一共是 7 根线。
 
 然后是改 platformio 配置，跟 TTL 一样，首先还是改 `platform.ini` 添加 `upload_protocol`，但是 DAP 还支持调试功能，因此还可以额外添加 `debug_tool` 指定调试器协议，改完效果大致如下：
 
@@ -153,6 +155,8 @@ framework = stm32cube
 upload_protocol = cmsis-dap
 # 调试协议也设为 DAP
 debug_tool = cmsis-dap
+# 波特率要设置得与被调试设备一致，否则输出内容会乱码
+monitor_speed = 115200
 ```
 
 这样完成后，就可以通过 USB 连接 DAP 调试器与电脑，用 platformio 进行程序烧录了。
@@ -539,6 +543,6 @@ TODO
 
 其中删掉了 `lcd` 文件夹中 ili9341 之外的所有其他驱动文件，以及 io_spi 外的所有其他协议的文件夹，如果不删除掉它们，编译时就会报错重复的函数定义。
 
-相关内容还可参考：[【强烈推荐】基于STM32的TFT-LCD各种显示实现（内容详尽含代码） - CSDN](https://blog.csdn.net/black_sneak/article/details/125583293)
+相关内容还可参考：[基于STM32的TFT-LCD各种显示实现（内容详尽含代码） - CSDN](https://blog.csdn.net/black_sneak/article/details/125583293)
 
 
